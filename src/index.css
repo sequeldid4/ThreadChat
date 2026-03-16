@@ -14,16 +14,37 @@
 [data-theme="pink"]  { --accent: #f472b6; --accent-dim: rgba(244,114,182,0.12); }
 
 html { height: 100%; }
+
 body {
   font-family: 'Bricolage Grotesque', sans-serif;
   background: var(--bg); color: var(--text);
-  height: 100%; height: 100dvh; height: calc(var(--vh) * 100);
+  height: 100%; height: 100dvh;
   overflow: hidden;
 }
+
 body::after {
   content: ''; position: fixed; inset: 0; pointer-events: none;
   z-index: 9999; mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='512' height='512' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
 }
-#root { height: 100%; display: flex; align-items: center; justify-content: center; }
+
+#root {
+  height: 100%;
+  display: flex;
+  background: var(--bg);
+}
+
+/* Desktop: show sidebar panel next to chat */
+@media (min-width: 900px) {
+  #root {
+    align-items: stretch;
+    justify-content: center;
+  }
+}
+
 input, textarea { user-select: text; -webkit-user-select: text; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--b1); border-radius: 2px; }
