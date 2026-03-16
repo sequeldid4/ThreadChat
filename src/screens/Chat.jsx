@@ -69,7 +69,7 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
       ping()
 
       // Push notification when tab/app is not focused
-      if (prefs.notifs && notifGranted.current && !document.hasFocus()) {
+      if (prefs.notifs && notifGranted.current) {
         try {
           new Notification(peer || 'Thread', {
             body: m.imageUrl ? '📷 Image' : (m.text || ''),

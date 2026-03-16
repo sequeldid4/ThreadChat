@@ -60,10 +60,12 @@ export default function Settings({ prefs, setPref, onClose }) {
     if (perm === 'granted') {
       setPref('notifs', true)
       // Show a test notification so user knows it works
-      new Notification('Thread', {
-        body: 'Notifications enabled ✓',
-        tag: 'thread-test',
-        silent: true,
+      const reg = await navigator.serviceWorker.ready
+         reg.showNotification('Thread', {
+         body: 'Notifications enabled ✓',
+         tag: 'thread-test',
+         silent: true,
+         vibrate: [100],
       })
     } else if (perm === 'denied') {
       setPref('notifs', false)
