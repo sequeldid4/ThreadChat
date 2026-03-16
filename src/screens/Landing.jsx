@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ref, set, get, update } from 'firebase/database'
+import { ref, set, get, update, query, orderByChild, equalTo } from 'firebase/database'
 import { db } from '../firebase'
 
 async function hashStr(str) {
@@ -10,7 +10,7 @@ async function hashStr(str) {
 function rnd(n = 10) { return Math.random().toString(36).slice(2, 2 + n) }
 
 const css = {
-  wrap: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', width: '100%', position: 'relative', overflow: 'hidden', display: 'flex' },
+  wrap: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100dvh', width: '100%', position: 'relative', overflow: 'hidden', display: 'flex' },
   gridBg: { position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(var(--s1) 1px,transparent 1px),linear-gradient(90deg,var(--s1) 1px,transparent 1px)', backgroundSize: '60px 60px', maskImage: 'radial-gradient(ellipse 80% 80% at 50% 50%,black 30%,transparent 100%)', pointerEvents: 'none', opacity: 0.5 },
   glow: { position: 'absolute', width: 700, height: 700, background: 'radial-gradient(circle,rgba(255,255,255,0.028) 0%,transparent 65%)', top: '50%', left: '50%', transform: 'translate(-50%,-58%)', pointerEvents: 'none' },
   inner: { position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' },
@@ -37,7 +37,6 @@ function Field({ label, type = 'text', placeholder, value, onChange }) {
   )
 }
 
-// ── NEW ROOM TAB ──
 function NewRoom({ uid, onDone }) {
   const [name, setName] = useState('')
   const [uname, setUname] = useState('')
@@ -75,7 +74,6 @@ function NewRoom({ uid, onDone }) {
   )
 }
 
-// ── SIGN BACK IN TAB ──
 function SignBack({ uid, onDone }) {
   const [uname, setUname] = useState('')
   const [pass, setPass] = useState('')
@@ -93,7 +91,6 @@ function SignBack({ uid, onDone }) {
       const data = snap.val()
       const passHash = await hashStr(pass + u)
       if (passHash !== data.passHash) return setErr('↳ wrong password')
-      // Restore full session
       const rsnap = await get(ref(db, 'rooms/' + data.roomId))
       let token = '', peer = '', peerUid = ''
       if (rsnap.exists()) {
@@ -118,7 +115,6 @@ function SignBack({ uid, onDone }) {
   )
 }
 
-// ── JOIN ROOM TAB ──
 function JoinRoom({ uid, defaultCode, onDone }) {
   const [name, setName] = useState('')
   const [uname, setUname] = useState('')
@@ -138,7 +134,6 @@ function JoinRoom({ uid, defaultCode, onDone }) {
       const usnap = await get(ref(db, 'usernames/' + u))
       if (usnap.exists()) return setErr('↳ username taken')
       const token = code.includes('?i=') ? code.split('?i=')[1] : code.trim()
-      const { query, orderByChild, equalTo, get: dbGet } = await import('firebase/database')
       const snap = await get(query(ref(db, 'rooms'), orderByChild('token'), equalTo(token)))
       if (!snap.exists()) return setErr('↳ invite not found')
       let roomId, roomData
@@ -165,7 +160,6 @@ function JoinRoom({ uid, defaultCode, onDone }) {
   )
 }
 
-// ── MAIN LANDING ──
 const TABS = ['new', 'back', 'join']
 const LABELS = { new: 'New room', back: 'Sign back in', join: 'Join room' }
 

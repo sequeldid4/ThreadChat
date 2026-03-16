@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react'
-import { ref, push, update, remove, set, get, query, orderByChild, equalTo } from 'firebase/database'
+import { ref, push, update, remove, set, get } from 'firebase/database'
 import { db, storage } from '../firebase'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { useMessages } from '../hooks/useMessages'
@@ -34,7 +34,6 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
   const prevCount  = useRef(0)
   const notifGranted = useRef(Notification.permission === 'granted')
 
-  // ── Detect peer from room if session didn't have it ──
   useEffect(() => {
     if (peer && peerUid) return
     get(ref(db, 'rooms/' + roomId)).then(snap => {
@@ -51,7 +50,6 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
     })
   }, [roomId, uid])
 
-  // ── Sound + notification for NEW INCOMING messages only ──
   useEffect(() => {
     if (messages.length <= prevCount.current) {
       prevCount.current = messages.length
@@ -59,32 +57,30 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
     }
     const newMsgs = messages.slice(prevCount.current)
     prevCount.current = messages.length
-
     newMsgs.forEach(m => {
-      // Only fire for incoming messages that are truly new
       if (!m.isNew) return
-      if (m.senderUid === uid) return  // ← this stops sound on YOUR own messages
-
-      // Play soft pop
+      if (m.senderUid === uid) return
       ping()
-
-      // Push notification when tab/app is not focused
       if (prefs.notifs && notifGranted.current) {
         try {
-          new Notification(peer || 'Thread', {
-            body: m.imageUrl ? '📷 Image' : (m.text || ''),
-            icon: '/icon.png',
-            badge: '/icon.png',
-            tag: 'thread-msg',       // replaces previous notif instead of stacking
-            renotify: true,           // still plays sound even if same tag
-            silent: false,
-          })
+          const body = m.imageUrl ? '📷 Image' : (m.text || '')
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then(reg => {
+              reg.showNotification(peer || 'Thread', {
+                body,
+                tag: 'thread-msg',
+                renotify: true,
+                vibrate: [200, 100, 200],
+              })
+            })
+          } else {
+            new Notification(peer || 'Thread', { body, tag: 'thread-msg' })
+          }
         } catch (e) {}
       }
     })
   }, [messages, uid, peer, prefs.notifs, ping])
 
-  // ── Auto scroll to bottom ──
   useEffect(() => {
     const w = wrapRef.current
     if (!w) return
@@ -92,7 +88,6 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
     if (atBottom) setTimeout(() => { w.scrollTop = w.scrollHeight }, 30)
   }, [messages, peerTyping])
 
-  // ── Mark peer messages as seen ──
   useEffect(() => {
     if (!peerUid || !prefs.readReceipts) return
     messages
@@ -100,12 +95,10 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
       .forEach(m => update(ref(db, `rooms/${roomId}/msgs/${m.id}`), { seen: true }))
   }, [messages, peerUid, prefs.readReceipts])
 
-  // ── Keep notifGranted ref in sync ──
   useEffect(() => {
     notifGranted.current = Notification.permission === 'granted'
   }, [prefs.notifs])
 
-  // ── Send message ──
   async function sendMsg(text) {
     stopTyping()
     const now = new Date()
@@ -124,7 +117,6 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
     await push(ref(db, `rooms/${roomId}/msgs`), payload)
   }
 
-  // ── Image upload ──
   async function uploadImage(file) {
     if (!file || file.size > 10 * 1024 * 1024) return
     const sRef = storageRef(storage, `rooms/${roomId}/${Date.now()}_${file.name}`)
@@ -146,7 +138,6 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
     )
   }
 
-  // ── Reactions ──
   async function addReaction(msgId, emoji) {
     const path = `rooms/${roomId}/msgs/${msgId}/reactions/${uid}`
     const snap = await get(ref(db, path))
@@ -154,15 +145,12 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
     setPicker(null)
   }
 
-  // ── Delete ──
   async function deleteMsg(msgId) {
     await update(ref(db, `rooms/${roomId}/msgs/${msgId}`), { deleted: true, text: 'message deleted' })
   }
 
-  // ── Clear all ──
   async function clearAll() { await remove(ref(db, `rooms/${roomId}/msgs`)) }
 
-  // ── Group consecutive messages from same sender ──
   let lastSender = null
   const grouped = messages.map(m => {
     const same = m.senderUid === lastSender
@@ -171,8 +159,7 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
   })
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', height: '100dvh', width: '100%', maxWidth: 740, margin: '0 auto' }}>
-
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', width: '100%', maxWidth: 740, margin: '0 auto' }}>
       <TopBar
         peerName={peer || '—'}
         peerOnline={peerOnline}
@@ -181,18 +168,13 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
         onSettings={() => setShowSettings(true)}
         onMenu={() => setShowMenu(true)}
       />
-
-      {/* Messages area */}
       <div ref={wrapRef} style={{ flex: 1, overflowY: 'auto', padding: '24px 20px 16px', display: 'flex', flexDirection: 'column', gap: 3, position: 'relative' }}>
-
         <div style={{ position: 'fixed', inset: '60px 0 72px', background: 'repeating-linear-gradient(0deg,transparent,transparent 28px,rgba(255,255,255,0.008) 28px,rgba(255,255,255,0.008) 29px)', pointerEvents: 'none', zIndex: 0 }} />
-
         {messages.length === 0 && (
           <div style={{ alignSelf: 'center', fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: 'var(--dim)', letterSpacing: 1.5, textTransform: 'uppercase', padding: '5px 16px', border: '1px solid var(--b1)', borderRadius: 100, margin: '10px 0', background: 'rgba(14,14,14,0.8)' }}>
             {peer ? `🔒 encrypted · waiting for ${peer}` : 'waiting for contact...'}
           </div>
         )}
-
         {grouped.map(m => (
           <div key={m.id} id={'row_' + m.id} style={{ marginTop: m.same ? 1 : 14 }}>
             <ChatBubble
@@ -203,20 +185,13 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
               onReply={setReplyTo}
               onReact={(msgId, el) => {
                 const rect = el?.getBoundingClientRect()
-                setPicker({
-                  msgId,
-                  position: rect
-                    ? { bottom: window.innerHeight - rect.top + 8, left: rect.left - 40 }
-                    : { bottom: 120, left: 40 }
-                })
+                setPicker({ msgId, position: rect ? { bottom: window.innerHeight - rect.top + 8, left: rect.left - 40 } : { bottom: 120, left: 40 } })
               }}
               onDelete={deleteMsg}
               onImageClick={setLightbox}
             />
           </div>
         ))}
-
-        {/* Typing indicator */}
         {peerTyping && (
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginTop: 4, zIndex: 1 }}>
             <div style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--s3)', border: '1px solid var(--b1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
@@ -230,14 +205,11 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
           </div>
         )}
       </div>
-
-      {/* Upload progress */}
       {uploadPct > 0 && (
         <div style={{ height: 2, background: 'var(--b1)', flexShrink: 0 }}>
           <div style={{ height: '100%', background: 'var(--accent)', width: uploadPct + '%', transition: 'width 0.3s', borderRadius: 2 }} />
         </div>
       )}
-
       <MessageInput
         onSend={sendMsg}
         onTyping={notifyTyping}
@@ -246,33 +218,14 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
         onImageUpload={uploadImage}
         enterSend={prefs.enterSend}
       />
-
-      {/* Emoji picker */}
-      {picker && (
-        <EmojiPicker
-          position={picker.position}
-          onPick={emoji => addReaction(picker.msgId, emoji)}
-          onClose={() => setPicker(null)}
-        />
-      )}
-
-      {/* Image lightbox */}
+      {picker && <EmojiPicker position={picker.position} onPick={emoji => addReaction(picker.msgId, emoji)} onClose={() => setPicker(null)} />}
       {lightbox && (
         <div onClick={() => setLightbox(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
-          <img src={lightbox} style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 12, animation: 'bPop 0.2s ease' }} alt="" onClick={e => e.stopPropagation()} />
+          <img src={lightbox} style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 12 }} alt="" onClick={e => e.stopPropagation()} />
         </div>
       )}
-
       {showSettings && <Settings prefs={prefs} setPref={setPref} onClose={() => setShowSettings(false)} />}
-      {showMenu && (
-        <Menu
-          onInvite={() => { setShowInvite(true); setShowMenu(false) }}
-          onSettings={() => { setShowSettings(true); setShowMenu(false) }}
-          onClear={() => { clearAll(); setShowMenu(false) }}
-          onSignOut={onSignOut}
-          onClose={() => setShowMenu(false)}
-        />
-      )}
+      {showMenu && <Menu onInvite={() => { setShowInvite(true); setShowMenu(false) }} onSettings={() => { setShowSettings(true); setShowMenu(false) }} onClear={() => { clearAll(); setShowMenu(false) }} onSignOut={onSignOut} onClose={() => setShowMenu(false)} />}
       {showInvite && <Invite token={token} onBack={() => setShowInvite(false)} />}
     </div>
   )
