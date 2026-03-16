@@ -20,6 +20,9 @@ body {
   background: var(--bg); color: var(--text);
   height: 100%; height: 100dvh;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 body::after {
@@ -29,22 +32,26 @@ body::after {
 }
 
 #root {
+  width: 100%;
   height: 100%;
   display: flex;
-  background: var(--bg);
+  align-items: center;
+  justify-content: center;
 }
 
-/* Desktop: show sidebar panel next to chat */
-@media (min-width: 900px) {
-  #root {
-    align-items: stretch;
-    justify-content: center;
+/* On desktop center the chat with max width and border */
+@media (min-width: 768px) {
+  #root > * {
+    max-width: 740px;
+    width: 100%;
+    height: 100%;
+    border-left: 1px solid var(--b1);
+    border-right: 1px solid var(--b1);
   }
 }
 
 input, textarea { user-select: text; -webkit-user-select: text; }
 
-/* Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--b1); border-radius: 2px; }
