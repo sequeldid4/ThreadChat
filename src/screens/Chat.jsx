@@ -1,5 +1,5 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react'
-import { ref, push, update, remove, set } from 'firebase/database'
+import React, { useRef, useEffect, useState } from 'react'
+import { ref, push, update, remove, set, get, query, orderByChild, equalTo } from 'firebase/database'
 import { db, storage } from '../firebase'
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage'
 import { useMessages } from '../hooks/useMessages'
@@ -15,79 +15,118 @@ import Menu from '../components/Menu'
 import Invite from './Invite'
 
 export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
-  const { myName, roomId, token, peer: initPeer, peerUid: initPeerUid, role } = session
-  const [peer, setPeer]           = useState(initPeer || '')
-  const [peerUid, setPeerUid]     = useState(initPeerUid || '')
-  const [replyTo, setReplyTo]     = useState(null)
-  const [picker, setPicker]       = useState(null) // { msgId, position }
-  const [lightbox, setLightbox]   = useState(null)
+  const { myName, roomId, token, peer: initPeer, peerUid: initPeerUid } = session
+  const [peer, setPeer]         = useState(initPeer || '')
+  const [peerUid, setPeerUid]   = useState(initPeerUid || '')
+  const [replyTo, setReplyTo]   = useState(null)
+  const [picker, setPicker]     = useState(null)
+  const [lightbox, setLightbox] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
-  const [showMenu, setShowMenu]   = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
   const [showInvite, setShowInvite] = useState(false)
   const [uploadPct, setUploadPct] = useState(0)
 
-  const messages  = useMessages(roomId)
+  const messages   = useMessages(roomId)
   const peerOnline = usePresence(roomId, uid, myName)
   const { peerTyping, notifyTyping, stopTyping } = useTyping(roomId, uid)
-  const ping = useSound(prefs.msgSound)
-  const wrapRef = useRef(null)
-  const prevMsgCount = useRef(0)
+  const ping       = useSound(prefs.msgSound)
+  const wrapRef    = useRef(null)
+  const prevCount  = useRef(0)
+  const notifGranted = useRef(Notification.permission === 'granted')
 
-  // Detect peer from room if not already set
+  // ── Detect peer from room if session didn't have it ──
   useEffect(() => {
-    if (peer) return
-    const { ref: dbRef, onValue, off } = require('firebase/database')
-    // Use dynamic import workaround — actually just use the already-imported ref/onValue
-  }, [peer])
+    if (peer && peerUid) return
+    get(ref(db, 'rooms/' + roomId)).then(snap => {
+      if (!snap.exists()) return
+      const room = snap.val()
+      if (room.host && room.host.uid === uid && room.guest) {
+        setPeer(room.guest.name)
+        setPeerUid(room.guest.uid)
+      }
+      if (room.guest && room.guest.uid === uid && room.host) {
+        setPeer(room.host.name)
+        setPeerUid(room.host.uid)
+      }
+    })
+  }, [roomId, uid])
 
-  // Play sound for new incoming messages
+  // ── Sound + notification for NEW INCOMING messages only ──
   useEffect(() => {
-    if (messages.length > prevMsgCount.current) {
-      const newMsgs = messages.slice(prevMsgCount.current)
-      newMsgs.forEach(m => {
-        if (m.isNew && m.senderUid !== uid) {
-          ping()
-          if (prefs.notifs && !document.hasFocus() && Notification.permission === 'granted') {
-            new Notification(peer || 'Thread', { body: m.imageUrl ? '📷 Image' : m.text })
-          }
-        }
-      })
+    if (messages.length <= prevCount.current) {
+      prevCount.current = messages.length
+      return
     }
-    prevMsgCount.current = messages.length
-  }, [messages])
+    const newMsgs = messages.slice(prevCount.current)
+    prevCount.current = messages.length
 
-  // Auto scroll to bottom on new messages
+    newMsgs.forEach(m => {
+      // Only fire for incoming messages that are truly new
+      if (!m.isNew) return
+      if (m.senderUid === uid) return  // ← this stops sound on YOUR own messages
+
+      // Play soft pop
+      ping()
+
+      // Push notification when tab/app is not focused
+      if (prefs.notifs && notifGranted.current && !document.hasFocus()) {
+        try {
+          new Notification(peer || 'Thread', {
+            body: m.imageUrl ? '📷 Image' : (m.text || ''),
+            icon: '/icon.png',
+            badge: '/icon.png',
+            tag: 'thread-msg',       // replaces previous notif instead of stacking
+            renotify: true,           // still plays sound even if same tag
+            silent: false,
+          })
+        } catch (e) {}
+      }
+    })
+  }, [messages, uid, peer, prefs.notifs, ping])
+
+  // ── Auto scroll to bottom ──
   useEffect(() => {
     const w = wrapRef.current
     if (!w) return
-    const atBottom = w.scrollHeight - w.scrollTop - w.clientHeight < 100
-    if (atBottom) w.scrollTop = w.scrollHeight
+    const atBottom = w.scrollHeight - w.scrollTop - w.clientHeight < 120
+    if (atBottom) setTimeout(() => { w.scrollTop = w.scrollHeight }, 30)
   }, [messages, peerTyping])
 
-  // Mark peer messages as seen
+  // ── Mark peer messages as seen ──
   useEffect(() => {
     if (!peerUid || !prefs.readReceipts) return
-    messages.filter(m => m.senderUid === peerUid && !m.seen).forEach(m => {
-      update(ref(db, `rooms/${roomId}/msgs/${m.id}`), { seen: true })
-    })
+    messages
+      .filter(m => m.senderUid === peerUid && !m.seen)
+      .forEach(m => update(ref(db, `rooms/${roomId}/msgs/${m.id}`), { seen: true }))
   }, [messages, peerUid, prefs.readReceipts])
 
+  // ── Keep notifGranted ref in sync ──
+  useEffect(() => {
+    notifGranted.current = Notification.permission === 'granted'
+  }, [prefs.notifs])
+
+  // ── Send message ──
   async function sendMsg(text) {
     stopTyping()
     const now = new Date()
     const payload = {
       senderUid: uid, senderName: myName,
-      text, time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      text,
+      time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       ts: Date.now(), seen: false,
     }
-    if (replyTo) payload.replyTo = { fbKey: replyTo.id, text: replyTo.text || '', senderName: replyTo.senderName }
+    if (replyTo) payload.replyTo = {
+      fbKey: replyTo.id,
+      text: replyTo.text || '',
+      senderName: replyTo.senderName,
+    }
     setReplyTo(null)
     await push(ref(db, `rooms/${roomId}/msgs`), payload)
   }
 
+  // ── Image upload ──
   async function uploadImage(file) {
-    if (!file) return
-    if (file.size > 10 * 1024 * 1024) return
+    if (!file || file.size > 10 * 1024 * 1024) return
     const sRef = storageRef(storage, `rooms/${roomId}/${Date.now()}_${file.name}`)
     const task = uploadBytesResumable(sRef, file)
     task.on('state_changed',
@@ -98,7 +137,8 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
         const url = await getDownloadURL(task.snapshot.ref)
         const now = new Date()
         await push(ref(db, `rooms/${roomId}/msgs`), {
-          senderUid: uid, senderName: myName, imageUrl: url, text: '',
+          senderUid: uid, senderName: myName,
+          imageUrl: url, text: '',
           time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           ts: Date.now(), seen: false,
         })
@@ -106,29 +146,28 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
     )
   }
 
+  // ── Reactions ──
   async function addReaction(msgId, emoji) {
     const path = `rooms/${roomId}/msgs/${msgId}/reactions/${uid}`
-    const snap = await import('firebase/database').then(({ get, ref: r }) => get(r(db, path)))
-    if (snap.val() === emoji) await set(ref(db, path), null)
-    else await set(ref(db, path), emoji)
+    const snap = await get(ref(db, path))
+    await set(ref(db, path), snap.val() === emoji ? null : emoji)
     setPicker(null)
   }
 
+  // ── Delete ──
   async function deleteMsg(msgId) {
     await update(ref(db, `rooms/${roomId}/msgs/${msgId}`), { deleted: true, text: 'message deleted' })
   }
 
-  async function clearAll() {
-    await remove(ref(db, `rooms/${roomId}/msgs`))
-  }
+  // ── Clear all ──
+  async function clearAll() { await remove(ref(db, `rooms/${roomId}/msgs`)) }
 
-  // Group messages: figure out same-sender chains
+  // ── Group consecutive messages from same sender ──
   let lastSender = null
-  const grouped = messages.map((m, i) => {
+  const grouped = messages.map(m => {
     const same = m.senderUid === lastSender
     lastSender = m.senderUid
-    const nextSame = messages[i + 1]?.senderUid === m.senderUid
-    return { ...m, same, nextSame }
+    return { ...m, same }
   })
 
   return (
@@ -143,15 +182,14 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
         onMenu={() => setShowMenu(true)}
       />
 
-      {/* Messages */}
+      {/* Messages area */}
       <div ref={wrapRef} style={{ flex: 1, overflowY: 'auto', padding: '24px 20px 16px', display: 'flex', flexDirection: 'column', gap: 3, position: 'relative' }}>
 
-        {/* Scanlines */}
-        <div style={{ content: '', position: 'fixed', inset: '60px 0 72px', background: 'repeating-linear-gradient(0deg,transparent,transparent 28px,rgba(255,255,255,0.008) 28px,rgba(255,255,255,0.008) 29px)', pointerEvents: 'none', zIndex: 0 }} />
+        <div style={{ position: 'fixed', inset: '60px 0 72px', background: 'repeating-linear-gradient(0deg,transparent,transparent 28px,rgba(255,255,255,0.008) 28px,rgba(255,255,255,0.008) 29px)', pointerEvents: 'none', zIndex: 0 }} />
 
         {messages.length === 0 && (
           <div style={{ alignSelf: 'center', fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: 'var(--dim)', letterSpacing: 1.5, textTransform: 'uppercase', padding: '5px 16px', border: '1px solid var(--b1)', borderRadius: 100, margin: '10px 0', background: 'rgba(14,14,14,0.8)' }}>
-            {peer ? `🔒 ${peer} joined · encrypted` : 'waiting for contact...'}
+            {peer ? `🔒 encrypted · waiting for ${peer}` : 'waiting for contact...'}
           </div>
         )}
 
@@ -165,7 +203,12 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
               onReply={setReplyTo}
               onReact={(msgId, el) => {
                 const rect = el?.getBoundingClientRect()
-                setPicker({ msgId, position: rect ? { bottom: window.innerHeight - rect.top + 8, left: rect.left - 40 } : null })
+                setPicker({
+                  msgId,
+                  position: rect
+                    ? { bottom: window.innerHeight - rect.top + 8, left: rect.left - 40 }
+                    : { bottom: 120, left: 40 }
+                })
               }}
               onDelete={deleteMsg}
               onImageClick={setLightbox}
@@ -188,9 +231,9 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
         )}
       </div>
 
-      {/* Upload progress bar */}
+      {/* Upload progress */}
       {uploadPct > 0 && (
-        <div style={{ height: 2, background: 'var(--b1)' }}>
+        <div style={{ height: 2, background: 'var(--b1)', flexShrink: 0 }}>
           <div style={{ height: '100%', background: 'var(--accent)', width: uploadPct + '%', transition: 'width 0.3s', borderRadius: 2 }} />
         </div>
       )}
@@ -213,14 +256,13 @@ export default function Chat({ session, uid, prefs, setPref, onSignOut }) {
         />
       )}
 
-      {/* Lightbox */}
+      {/* Image lightbox */}
       {lightbox && (
         <div onClick={() => setLightbox(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
-          <img src={lightbox} style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 12, animation: 'bPop 0.2s ease' }} alt="" />
+          <img src={lightbox} style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 12, animation: 'bPop 0.2s ease' }} alt="" onClick={e => e.stopPropagation()} />
         </div>
       )}
 
-      {/* Overlays */}
       {showSettings && <Settings prefs={prefs} setPref={setPref} onClose={() => setShowSettings(false)} />}
       {showMenu && (
         <Menu
