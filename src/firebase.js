@@ -9,8 +9,8 @@ import { getStorage } from 'firebase/storage'
 const firebaseConfig = {
   apiKey: "AIzaSyDWV6CBJ8sR5Mx0zCQb5eMHktb7xOzdEeo",
   authDomain: "threadchat-2222d.firebaseapp.com",
-  projectId: "threadchat-2222d",
   databaseURL: "https://threadchat-2222d-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "threadchat-2222d",
   storageBucket: "threadchat-2222d.firebasestorage.app",
   messagingSenderId: "1057516156860",
   appId: "1:1057516156860:web:dfd4ad5889705d61ee1db9"
