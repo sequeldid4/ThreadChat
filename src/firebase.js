@@ -7,13 +7,12 @@ import { getStorage } from 'firebase/storage'
 //  PASTE YOUR FIREBASE CONFIG HERE
 // ═══════════════════════════════════════
 const firebaseConfig = {
-  apiKey:            "AIzaSyCQHyooMJKL7LRlkidDtDzefSz8rIjiQag",
-  authDomain:        "thread-chat-37414.firebaseapp.com",
-  databaseURL:       "https://thread-chat-37414-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId:         "thread-chat-37414",
-  storageBucket:     "thread-chat-37414.firebasestorage.app",
-  messagingSenderId: "426777032314",
-  appId:             "1:426777032314:web:904d69b316d3ccc5242dc3"
+  apiKey: "AIzaSyDWV6CBJ8sR5Mx0zCQb5eMHktb7xOzdEeo",
+  authDomain: "threadchat-2222d.firebaseapp.com",
+  projectId: "threadchat-2222d",
+  storageBucket: "threadchat-2222d.firebasestorage.app",
+  messagingSenderId: "1057516156860",
+  appId: "1:1057516156860:web:dfd4ad5889705d61ee1db9"
 }
 
 const app  = initializeApp(firebaseConfig)
